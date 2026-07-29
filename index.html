@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precognitive Matrix</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root {
+            --bg-base: #0f172a;
+            --panel-bg: rgba(15, 23, 42, 0.85);
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --accent-cyan: #06b6d4;
+            --accent-cyan-dim: rgba(6, 182, 212, 0.2);
+            --accent-red: #ef4444;
+            --accent-red-dim: rgba(239, 68, 68, 0.2);
+            --accent-yellow: #f59e0b;
+            --diff-bg: #1e293b;
+            --diff-red: rgba(220, 38, 38, 0.3);
+            --diff-green: rgba(16, 185, 129, 0.25);
+            --border-color: rgba(6, 182, 212, 0.3);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: var(--bg-base); color: var(--text-main); overflow: hidden; width: 100vw; height: 100vh; }
+
+        /* --- 3D CANVAS --- */
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
+
+        /* --- UI OVERLAY LAYER --- */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2;
+            pointer-events: none; display: flex; flex-direction: column;
+        }
+
+        .glass-panel {
+            background: var(--panel-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color); border-radius: 12px; pointer-events: auto;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        /* --- TOP HEADER BAR --- */
+        .top-hud {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 15px 30px; border-bottom: 1px solid var(--border-color);
+            background: rgba(15, 23, 42, 0.95); pointer-events: auto; flex-shrink: 0;
+        }
+
+        .slider-group { display: flex; align-items: center; gap: 20px; width: 400px; }
+        .slider-label { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+        .slider-label.active { color: var(--accent-cyan); }
+        
+        .slider-wrapper { position: relative; flex: 1; display: flex; align-items: center; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; z-index: 2; position: relative; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: var(--accent-cyan); cursor: pointer; margin-top: -6px; box-shadow: 0 0 10px var(--accent-cyan); }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: var(--accent-cyan-dim); border-radius: 2px; }
+        .slider-track-fill { position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 4px; background: var(--accent-cyan); z-index: 1; border-radius: 2px; width: 43%; pointer-events: none; }
+
+        .time-readout { display: flex; flex-direction: column; gap: 2px; border-left: 1px solid var(--border-color); padding-left: 20px; }
+        .time-readout span { font-size: 0.75rem; color: var(--text-muted); letter-spacing: 1px; }
+        .time-readout span.highlight { color: var(--text-main); font-weight: 600; }
+
+        .header-title { font-size: 1.3rem; font-weight: 300; letter-spacing: 4px; color: var(--accent-cyan); text-transform: uppercase; }
+        .header-title span { font-weight: 700; color: #fff; }
+
+        .status-badge { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--accent-cyan); border: 1px solid var(--accent-cyan); padding: 6px 16px; border-radius: 20px; background: var(--accent-cyan-dim); text-transform: uppercase; letter-spacing: 1px;}
+        .pulse { width: 6px; height: 6px; background-color: var(--accent-cyan); border-radius: 50%; animation: pulse-anim 2s infinite; }
+        @keyframes pulse-anim { 0% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7); } 70% { box-shadow: 0 0 0 6px rgba(6, 182, 212, 0); } 100% { box-shadow: 0 0 0 0 rgba(6, 182, 212, 0); } }
+
+        /* --- MAIN CONTENT AREA --- */
+        .main-workspace { display: flex; flex: 1; padding: 25px; gap: 25px; overflow: hidden; position: relative; }
+
+        /* Left Sidebar (Modules) */
+        .sidebar { width: 220px; padding: 20px 15px; display: flex; flex-direction: column; gap: 15px; height: max-content; }
+        .nav-title { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; padding-left: 10px; }
+        .nav-menu { display: flex; flex-direction: column; gap: 5px; }
+        .nav-item { padding: 12px 15px; border-radius: 8px; cursor: pointer; color: var(--text-muted); font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; gap: 10px; transition: all 0.2s; border: 1px solid transparent; }
+        .nav-item:hover { background: var(--accent-cyan-dim); color: var(--text-main); }
+        .nav-item.active { background: var(--accent-cyan-dim); color: var(--accent-cyan); border-color: var(--accent-cyan); }
+
+        /* Dynamic Views Container */
+        .views-container { flex: 1; position: relative; }
+        .view-section { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; pointer-events: none; }
+        .view-section.active-view { display: flex; gap: 25px; pointer-events: none; }
+
+        /* VIEW 1: DASHBOARD (Threats + Code Diff) */
+        .threats-panel { width: 320px; padding: 20px; display: flex; flex-direction: column; gap: 15px; height: max-content; pointer-events: auto; }
+        .panel-header { font-size: 0.85rem; color: var(--text-main); font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 10px; }
+        
+        .threat-card { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 8px; display: flex; flex-direction: column; gap: 6px; position: relative; overflow: hidden; transition: transform 0.2s; cursor: pointer; }
+        .threat-card:hover { transform: translateX(5px); background: rgba(255, 255, 255, 0.06); }
+        .threat-card.active { border-color: var(--accent-yellow); background: rgba(245, 158, 11, 0.1); }
+        .threat-card.active::before { content: ''; position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: var(--accent-yellow); }
+        
+        .threat-card.red-alert { border-color: var(--accent-red); background: var(--accent-red-dim); }
+        .threat-card.red-alert::before { content: ''; position: absolute; left: 0; top: 0; width: 3px; height: 100%; background: var(--accent-red); }
+
+        .threat-card .eta { font-size: 0.7rem; font-weight: 700; color: var(--accent-yellow); }
+        .threat-card.red-alert .eta { color: var(--accent-red); }
+        .threat-card .title { font-size: 0.95rem; font-weight: 600; color: #fff; }
+        .threat-card .desc { font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; }
+
+        /* Code Diff Panel (Right Side) */
+        .code-diff-panel { flex: 1; display: flex; flex-direction: column; pointer-events: auto; max-width: 800px; margin-left: auto; height: 100%; }
+        .diff-header { padding: 20px; border-bottom: 1px solid var(--border-color); font-size: 0.85rem; color: var(--accent-cyan); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+        .diff-content { display: flex; flex: 1; background: var(--diff-bg); overflow: hidden; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.8rem; line-height: 1.6; }
+        
+        .diff-col { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+        .diff-col:first-child { border-right: 1px solid rgba(255,255,255,0.1); }
+        .code-line { display: flex; width: 100%; }
+        .code-line.removed { background-color: var(--diff-red); }
+        .code-line.added { background-color: var(--diff-green); }
+        .code-line.warn { background-color: rgba(245, 158, 11, 0.2); }
+        .line-num { width: 40px; text-align: right; padding-right: 15px; color: #64748b; user-select: none; border-right: 1px solid rgba(255,255,255,0.05); }
+        .line-text { padding-left: 15px; color: #cbd5e1; white-space: pre; overflow-x: auto; flex: 1; }
+        
+        /* Syntax highlighting */
+        .syn-keyword { color: #c678dd; } .syn-func { color: #61afef; } .syn-str { color: #98c379; } .syn-comment { color: #7f848e; font-style: italic; }
+
+        .diff-footer { padding: 15px 20px; border-top: 1px solid var(--border-color); font-size: 0.75rem; color: var(--text-muted); background: rgba(0,0,0,0.2); }
+        .diff-footer span { color: var(--text-main); font-weight: 600; }
+
+        /* --- FULL MODULE SUB-PAGES --- */
+        .sub-page-panel { 
+            flex: 1; padding: 40px; pointer-events: auto; overflow-y: auto; 
+            max-width: 1000px; margin: 0 auto; width: 100%; height: 100%;
+        }
+        .sub-page-panel h1 { color: var(--accent-cyan); margin-bottom: 10px; font-weight: 300; font-size: 1.8rem; }
+        .sub-page-panel p.subtitle { color: var(--text-muted); margin-bottom: 35px; font-size: 0.95rem; line-height: 1.5; }
+
+        /* Sub-page Specific Components */
+        .stat-card { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 25px; text-align: center; }
+        .stat-card h3 { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;}
+        .stat-card h2 { font-size: 2.5rem; font-weight: 300;}
+
+        .futuristic-table { width: 100%; border-collapse: collapse; text-align: left; }
+        .futuristic-table th { padding: 15px; border-bottom: 1px solid var(--accent-cyan); color: var(--accent-cyan); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; font-size: 0.85rem; }
+        .futuristic-table td { padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.95rem; }
+        .futuristic-table tr:hover td { background: var(--accent-cyan-dim); }
+
+        .terminal-window {
+            background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 8px; padding: 25px;
+            font-family: 'Courier New', Courier, monospace; height: 400px; overflow-y: auto; box-shadow: inset 0 0 30px rgba(0, 255, 136, 0.02);
+        }
+        .terminal-window p { margin-bottom: 10px; font-size: 0.9rem; line-height: 1.5; }
+        .term-warn { color: #f59e0b; font-weight: bold; }
+        .term-crit { color: #ef4444; font-weight: bold; }
+        .term-info { color: #10b981; font-weight: bold; }
+        
+        .btn-primary {
+            background: var(--accent-cyan-dim); color: var(--accent-cyan); border: 1px solid var(--accent-cyan);
+            padding: 12px 20px; border-radius: 6px; cursor: pointer; text-transform: uppercase; font-weight: bold; letter-spacing: 1px; transition: all 0.2s;
+        }
+        .btn-primary:hover { background: var(--accent-cyan); color: #000; }
+        
+        .form-input { width: 100%; padding: 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); color: white; border-radius: 6px; outline: none; }
+
+        /* Footer HUD */
+        .bottom-hud { position: absolute; bottom: 0; left: 0; width: 100%; padding: 10px 30px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 3; }
+        .system-health { display: flex; align-items: center; gap: 15px; font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+        .health-bar { width: 150px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+        .health-fill { width: 92%; height: 100%; background: var(--accent-cyan); }
+        .version-info { font-size: 0.7rem; color: var(--text-muted); }
+    </style>
+</head>
+<body>
+
+    <!-- 3D WebGL Layer -->
+    <div id="canvas-container"></div>
+
+    <!-- UI Overlay Layer -->
+    <div id="ui-layer">
+        
+        <!-- Top HUD Bar -->
+        <header class="top-hud">
+            <div class="slider-group">
+                <span class="slider-label">System Time: T+0</span>
+                <div class="slider-wrapper">
+                    <div class="slider-track-fill" id="slider-fill"></div>
+                    <input type="range" id="chronology-slider" min="0" max="90" value="43">
+                </div>
+                <span class="slider-label active" id="temporal-view-lbl">Temporal View: T+43</span>
+                <span class="slider-label">Future Limit: T+90</span>
+            </div>
+
+            <div class="time-readout">
+                <span>CURRENT TIME: <span class="highlight">T+0 (UTC-5)</span></span>
+                <span>TEMPORAL OFFSET: <span class="highlight" id="offset-display">+43 DAYS</span></span>
+            </div>
+
+            <div class="header-title">PRECOGNITIVE <span>MATRIX</span></div>
+            <div class="status-badge"><div class="pulse"></div>Temporal Engine: Online</div>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="main-workspace">
+            
+            <!-- Global Sidebar -->
+            <nav class="glass-panel sidebar">
+                <div class="nav-title">Modules</div>
+                <div class="nav-menu">
+                    <div class="nav-item active" data-target="view-dashboard">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                        Matrix Dashboard
+                    </div>
+                    <div class="nav-item" data-target="view-entropy">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+                        Quantum Entropy
+                    </div>
+                    <div class="nav-item" data-target="view-patches">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                        Proactive Patches
+                    </div>
+                    <div class="nav-item" data-target="view-logs">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        Temporal Logs
+                    </div>
+                    <div class="nav-item" data-target="view-settings">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                        Matrix Config
+                    </div>
+                </div>
+            </nav>
+
+            <div class="views-container">
+                
+                <!-- VIEW 1: MATRIX DASHBOARD -->
+                <div id="view-dashboard" class="view-section active-view">
+                    <!-- Predicted Breaches Panel -->
+                    <aside class="glass-panel threats-panel">
+                        <div class="panel-header">Predicted Breaches</div>
+                        <div class="threat-card active">
+                            <span class="eta">T-MINUS 12 DAYS</span>
+                            <span class="title">Zero-Day: unwritten_auth.py</span>
+                            <span class="desc">Buffer overflow vulnerability in a repo commit scheduled for next week.</span>
+                        </div>
+                        <div class="threat-card red-alert">
+                            <span class="eta">T-MINUS 45 DAYS</span>
+                            <span class="title">Quantum Decryption Attempt</span>
+                            <span class="desc">Encrypted traffic capture will be retroactively decrypted by anomalous actor.</span>
+                        </div>
+                        <div class="threat-card">
+                            <span class="eta">T-MINUS 89 DAYS</span>
+                            <span class="title">Temporal Injection</span>
+                            <span class="desc">Database logs altered prior to system initialization.</span>
+                        </div>
+                    </aside>
+
+                    <!-- Code Diff Panel -->
+                    <div class="glass-panel code-diff-panel">
+                        <div class="diff-header">FUTURE-COMMIT CODE DIFF (T-MINUS 12D: unwritten_auth.py)</div>
+                        <div class="diff-content">
+                            <!-- Left Column -->
+                            <div class="diff-col">
+                                <div class="code-line"><div class="line-num">1</div><div class="line-text"><span class="syn-keyword">def</span> <span class="syn-func">authenticate_user</span>(token):</div></div>
+                                <div class="code-line"><div class="line-num">2</div><div class="line-text">    <span class="syn-str">"""..."""</span></div></div>
+                                <div class="code-line"><div class="line-num">3</div><div class="line-text">    sanitized_token = sanitize_input(token)</div></div>
+                                <div class="code-line"><div class="line-num">4</div><div class="line-text"></div></div>
+                                <div class="code-line"><div class="line-num">5</div><div class="line-text">    <span class="syn-keyword">if</span> dangerous_char_check(token):</div></div>
+                                <div class="code-line"><div class="line-num">6</div><div class="line-text">        ...</div></div>
+                                <div class="code-line"><div class="line-num">7</div><div class="line-text">    sanitized_token = sanitize_input(token)</div></div>
+                                <div class="code-line warn"><div class="line-num">8</div><div class="line-text"><span class="syn-comment">    // dangerous overflow pointt</span></div></div>
+                                <div class="code-line removed"><div class="line-num">9</div><div class="line-text">    <span class="syn-keyword">if</span> dangerous_char_check(token):</div></div>
+                                <div class="code-line removed"><div class="line-num">10</div><div class="line-text">        buffer = <span class="syn-func">open</span>(<span class="syn-str">"/auth/tokens.log"</span>, <span class="syn-str">"a"</span>)</div></div>
+                                <div class="code-line"><div class="line-num">11</div><div class="line-text"></div></div>
+                                <div class="code-line warn"><div class="line-num">12</div><div class="line-text"><span class="syn-comment">    // Dangerous - overflow point to a log</span></div></div>
+                                <div class="code-line removed"><div class="line-num">13</div><div class="line-text">    <span class="syn-keyword">if</span> dangerous_char_check(token):</div></div>
+                                <div class="code-line removed"><div class="line-num">14</div><div class="line-text">        buffer = <span class="syn-func">open</span>(<span class="syn-str">"/auth/tokens.log"</span>, <span class="syn-str">"a"</span>)</div></div>
+                                <div class="code-line"><div class="line-num">15</div><div class="line-text"></div></div>
+                                <div class="code-line"><div class="line-num">16</div><div class="line-text"></div></div>
+                                <div class="code-line"><div class="line-num">17</div><div class="line-text">        buffer = <span class="syn-func">open</span>(<span class="syn-str">"/auth/tokens.log"</span>, <span class="syn-str">"a"</span>)</div></div>
+                                <div class="code-line"><div class="line-num">18</div><div class="line-text">    ...</div></div>
+                                <div class="code-line"><div class="line-num">19</div><div class="line-text">    <span class="syn-keyword">return</span> asll</div></div>
+                            </div>
+                            
+                            <!-- Right Column -->
+                            <div class="diff-col">
+                                <div class="code-line"><div class="line-num">1</div><div class="line-text"><span class="syn-keyword">def</span> <span class="syn-func">authenticate_user</span>(token):</div></div>
+                                <div class="code-line"><div class="line-num">2</div><div class="line-text">    <span class="syn-str">"""..."""</span></div></div>
+                                <div class="code-line"><div class="line-num">3</div><div class="line-text">    sanitized_token = sanitize_input(token)</div></div>
+                                <div class="code-line"><div class="line-num">4</div><div class="line-text"></div></div>
+                                <div class="code-line"><div class="line-num">5</div><div class="line-text">    <span class="syn-keyword">if</span> dangerous_char_check(sanitized_token):</div></div>
+                                <div class="code-line"><div class="line-num">6</div><div class="line-text">        ...</div></div>
+                                <div class="code-line"><div class="line-num">7</div><div class="line-text">    sanitized_token = sanitize_input(token)</div></div>
+                                <div class="code-line"><div class="line-num">8</div><div class="line-text"></div></div>
+                                <div class="code-line added"><div class="line-num">9</div><div class="line-text">    <span class="syn-keyword">with</span> <span class="syn-func">open</span>(<span class="syn-str">"/auth/tokens.log"</span>, <span class="syn-str">"a"</span>) <span class="syn-keyword">as</span> f:</div></div>
+                                <div class="code-line added"><div class="line-num">10</div><div class="line-text">        f.write(sanitized_token)</div></div>
+                                <div class="code-line"><div class="line-num">11</div><div class="line-text"></div></div>
+                                <div class="code-line"><div class="line-num">12</div><div class="line-text"></div></div>
+                                <div class="code-line"><div class="line-num">13</div><div class="line-text"></div></div>
+                                <div class="code-line added"><div class="line-num">14</div><div class="line-text">    <span class="syn-keyword">if</span> dangerous_char_check(sanitized_token):</div></div>
+                                <div class="code-line added"><div class="line-num">15</div><div class="line-text">        <span class="syn-keyword">with</span> <span class="syn-func">open</span>(<span class="syn-str">"/auth/tokens.log"</span>, <span class="syn-str">"a"</span>) <span class="syn-keyword">as</span> f:</div></div>
+                                <div class="code-line added"><div class="line-num">16</div><div class="line-text">            f.write(sanitized_token)</div></div>
+                                <div class="code-line"><div class="line-num">17</div><div class="line-text"></div></div>
+                                <div class="code-line"><div class="line-num">18</div><div class="line-text">        buffer = <span class="syn-func">open</span>(<span class="syn-str">"/auth/tokens.log"</span>, <span class="syn-str">"a"</span>)</div></div>
+                                <div class="code-line"><div class="line-num">19</div><div class="line-text">    ...</div></div>
+                                <div class="code-line"><div class="line-num">20</div><div class="line-text">    <span class="syn-keyword">return</span> sall</div></div>
+                            </div>
+                        </div>
+                        <div class="diff-footer">
+                            AUTOMATIC PATCH: (applied - T-Minus 12.3 Days). <br>
+                            Patched by: <span>Matrix Patch Engine v4.1</span>. Patch Integrity: <span>99.9%</span>.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW 2: QUANTUM ENTROPY -->
+                <div id="view-entropy" class="view-section">
+                    <div class="glass-panel sub-page-panel">
+                        <h1>Quantum Entropy & Thermal State</h1>
+                        <p class="subtitle">Active thermal siphoning metrics. Negative thermodynamics achieved. The central processing cores are actively absorbing ambient heat from edge nodes to power predictive models, reducing data center heat generation.</p>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 40px;">
+                            <div class="stat-card"><h3>Core Temp</h3><h2 style="color: #10b981;">-14.2°C</h2></div>
+                            <div class="stat-card"><h3>Ambient Siphon</h3><h2 style="color: var(--accent-cyan);">+4,200 BTU/s</h2></div>
+                            <div class="stat-card"><h3>Paradox Risk</h3><h2 style="color: var(--accent-red);">0.04%</h2></div>
+                        </div>
+
+                        <div style="width: 100%; height: 250px; border: 1px dashed rgba(6, 182, 212, 0.3); border-radius: 8px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.3);">
+                            <p style="color: var(--text-muted); font-family: monospace;">[ Real-time Negative Thermodynamics Chart Rendering ]</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW 3: PROACTIVE PATCHES -->
+                <div id="view-patches" class="view-section">
+                    <div class="glass-panel sub-page-panel">
+                        <h1>Automated Patch Execution</h1>
+                        <p class="subtitle">Applying defensive countermeasures to malicious code that is currently being engineered by hostile actors. Systems are secured before the threat is typed.</p>
+                        
+                        <table class="futuristic-table">
+                            <thead>
+                                <tr><th>Target Module</th><th>Vulnerability Type</th><th>Scheduled Author</th><th>Status</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>auth_gateway.py</td><td>Memory Leak (Future)</td><td>@anon_77X</td><td style="color: #10b981;">Pre-patched</td></tr>
+                                <tr><td>crypto_utils.js</td><td>Quantum Decryption</td><td>Unknown Node</td><td style="color: var(--accent-red);">Compiling Countermeasure...</td></tr>
+                                <tr><td>vortex_router.go</td><td>Temporal Desync</td><td>Internal System</td><td style="color: var(--accent-cyan);">Simulated in Sandbox</td></tr>
+                                <tr><td>legacy_api.php</td><td>Remote Code Execution</td><td>@null_byte</td><td style="color: #10b981;">Pre-patched</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- VIEW 4: TEMPORAL LOGS -->
+                <div id="view-logs" class="view-section">
+                    <div class="glass-panel sub-page-panel">
+                        <h1>Temporal Log Inspector</h1>
+                        <p class="subtitle">Live feed of server events projected from the upcoming 90 days. Read-only timeline.</p>
+                        <div class="terminal-window">
+                            <p><span class="term-info">[T+02:14:11] INFO:</span> Temporal engine calibration stable at 99.98%.</p>
+                            <p><span class="term-warn">[T+14:00:00] WARN:</span> Attempted SQL injection on uncreated table 'users_v4' detected from IP 192.168.x.x.</p>
+                            <p><span class="term-info">[T+14:05:12] INFO:</span> Routing paradoxical packet to null space.</p>
+                            <p><span class="term-crit">[T+18:22:45] CRIT:</span> Buffer overflow predicted in module 'auth'. Initiating timeline alteration protocols.</p>
+                            <p><span class="term-info">[T+18:22:46] INFO:</span> Source code successfully altered. Vulnerability erased from timeline.</p>
+                            <p><span style="color: #fff;">[T+19:00:00] SYS:</span> Standby for chronological sync...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW 5: MATRIX CONFIG -->
+                <div id="view-settings" class="view-section">
+                    <div class="glass-panel sub-page-panel">
+                        <h1>Matrix Calibration</h1>
+                        <p class="subtitle">Configure the bounds of the predictive models and thermal thresholds.</p>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
+                            <div style="display: flex; flex-direction: column; gap: 20px;">
+                                <div>
+                                    <label style="display: block; color: var(--text-muted); margin-bottom: 8px;">Temporal Look-ahead Radius (Days)</label>
+                                    <input type="number" value="90" class="form-input">
+                                </div>
+                                <div>
+                                    <label style="display: block; color: var(--text-muted); margin-bottom: 8px;">Paradox Resolution Protocol</label>
+                                    <select class="form-input" style="appearance: none;">
+                                        <option>Auto-Heal Timeline (Recommended)</option>
+                                        <option>Quarantine Reality Branch</option>
+                                        <option>Hard Reset</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="display: block; color: var(--text-muted); margin-bottom: 8px;">Quantum Entropy Limit (BTU/s)</label>
+                                    <input type="number" value="5000" class="form-input">
+                                </div>
+                                <button class="btn-primary" style="margin-top: 10px; width: max-content;">Save Calibration</button>
+                            </div>
+                            
+                            <div style="background: rgba(0,0,0,0.2); border-radius: 8px; padding: 25px; border: 1px solid rgba(255,255,255,0.05); height: max-content;">
+                                <h3 style="color: #fff; margin-bottom: 15px; font-size: 1.1rem;">System Constraints</h3>
+                                <p style="color: var(--accent-red); font-size: 0.9rem; line-height: 1.6; margin-bottom: 15px;">Warning: Expanding the look-ahead radius beyond 90 days exponentially increases the risk of overlapping chronological causality loops. Proceed with caution.</p>
+                                <p style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.6;">Thermal siphoning requires active connections to external infrastructure nodes to correctly offset heat generation parameters.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+        
+        <!-- Bottom HUD -->
+        <footer class="bottom-hud">
+            <div class="system-health">
+                System health:
+                <div class="health-bar"><div class="health-fill"></div></div>
+            </div>
+            <div class="version-info">Version: info</div>
+        </footer>
+    </div>
+
+    <!-- Logic (Routing & Three.js 3D Isometric Network) -->
+    <script>
+        // --- 1. UI LOGIC (Slider & Navigation) ---
+        const slider = document.getElementById('chronology-slider');
+        const sliderFill = document.getElementById('slider-fill');
+        const temporalViewLbl = document.getElementById('temporal-view-lbl');
+        const offsetDisplay = document.getElementById('offset-display');
+
+        function updateSlider() {
+            const val = slider.value;
+            const percent = (val / slider.max) * 100;
+            sliderFill.style.width = percent + '%';
+            temporalViewLbl.innerText = `Temporal View: T+${val}`;
+            offsetDisplay.innerText = `+${val} DAYS`;
+        }
+        slider.addEventListener('input', updateSlider);
+        updateSlider();
+
+        // Routing Logic
+        const navItems = document.querySelectorAll('.nav-item');
+        const viewSections = document.querySelectorAll('.view-section');
+
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const targetId = item.getAttribute('data-target');
+                if(!targetId) return;
+
+                // Remove active classes
+                navItems.forEach(n => n.classList.remove('active'));
+                viewSections.forEach(view => view.classList.remove('active-view'));
+                
+                // Add active classes to targets
+                item.classList.add('active');
+                document.getElementById(targetId).classList.add('active-view');
+            });
+        });
+
+        // --- 2. THREE.JS SCENE (Isometric Network) ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x0f172a, 0.003);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
+        camera.position.set(0, 150, 200);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        const group = new THREE.Group();
+        scene.add(group);
+
+        function createNode(x, z, colorHex) {
+            const size = 12;
+            const geometry = new THREE.BoxGeometry(size, size, size);
+            
+            const coreMat = new THREE.MeshBasicMaterial({ 
+                color: colorHex, transparent: true, opacity: 0.15, 
+                depthWrite: false, blending: THREE.AdditiveBlending 
+            });
+            const core = new THREE.Mesh(geometry, coreMat);
+            
+            const edges = new THREE.EdgesGeometry(geometry);
+            const edgeMat = new THREE.LineBasicMaterial({ color: colorHex, linewidth: 2 });
+            const edgeLines = new THREE.LineSegments(edges, edgeMat);
+            
+            core.add(edgeLines);
+            core.position.set(x, 0, z);
+            
+            const innerGeom = new THREE.BoxGeometry(size/2, size/2, size/2);
+            const innerMat = new THREE.MeshBasicMaterial({ color: colorHex, wireframe: true, transparent: true, opacity: 0.5 });
+            const inner = new THREE.Mesh(innerGeom, innerMat);
+            core.add(inner);
+            core.userData.innerCube = inner;
+
+            return core;
+        }
+
+        const nodes = [
+            createNode(0, 0, 0xf59e0b),      
+            createNode(-60, -40, 0x06b6d4),  
+            createNode(70, -30, 0x06b6d4),   
+            createNode(-50, 60, 0x06b6d4),   
+            createNode(60, 50, 0x06b6d4),    
+            createNode(-100, 10, 0x06b6d4),  
+        ];
+
+        nodes.forEach(n => group.add(n));
+
+        const lineMat = new THREE.LineBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.3 });
+        const connections = [
+            [0, 1], [0, 2], [0, 3], [0, 4], [0, 5],
+            [1, 5], [3, 5], [2, 4], [1, 3]
+        ];
+
+        connections.forEach(pair => {
+            const points = [];
+            points.push(nodes[pair[0]].position);
+            points.push(nodes[pair[1]].position);
+            const geom = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(geom, lineMat);
+            group.add(line);
+        });
+
+        const particleCount = 200;
+        const pGeom = new THREE.BufferGeometry();
+        const pPos = new Float32Array(particleCount * 3);
+        for(let i=0; i<particleCount; i++){
+            pPos[i*3] = (Math.random() - 0.5) * 300;
+            pPos[i*3+1] = (Math.random() - 0.5) * 50;
+            pPos[i*3+2] = (Math.random() - 0.5) * 300;
+        }
+        pGeom.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+        const pMat = new THREE.PointsMaterial({ color: 0x06b6d4, size: 1.5, transparent: true, opacity: 0.6 });
+        const particles = new THREE.Points(pGeom, pMat);
+        group.add(particles);
+
+        group.position.x = -40;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            group.rotation.y += 0.001;
+            
+            nodes.forEach((node, i) => {
+                node.position.y = Math.sin(Date.now() * 0.001 + i) * 5;
+                if(node.userData.innerCube) {
+                    node.userData.innerCube.rotation.x += 0.01;
+                    node.userData.innerCube.rotation.y += 0.01;
+                }
+            });
+
+            particles.rotation.y -= 0.0005;
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
